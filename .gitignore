@@ -1,0 +1,46 @@
+# Local agent/editor state
+.agents/
+
+# Keil/uVision user and generated files
+*.uvguix.*
+*.uvoptx
+*.uvopt
+*.lnp
+*.dep
+*.crf
+*.d
+*.o
+*.obj
+*.lst
+*.map
+*.htm
+*.html
+*.build_log.htm
+*.iex
+JLinkLog.txt
+JLinkSettings.ini
+
+# Firmware build outputs
+*.axf
+*.elf
+*.hex
+*.bin
+*.srec
+*.lst
+*.lib
+
+# Keil output directories
+**/Project/Objects/
+**/Project/Listings/
+**/Project/DebugConfig/
+
+# Temporary and backup files
+*.TMP
+*.tmp
+*.bak
+*.Bak
+*~
+
+# Python cache
+__pycache__/
+*.py[cod]

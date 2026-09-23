@@ -50,6 +50,11 @@ uint8_t user_flash_commit_target(void)
 	return 0;
 }
 
+
+//解锁flash
+//erase，erase大小为200k
+//上锁flash
+//检查是否擦除完成(转成volatile uint32位指针类型,再进行解引用，判断值是否为全F)
 static uint8_t user_flash_erase(void)
 {
 	if(user_flash_select_target() == 0)
@@ -68,7 +73,7 @@ static uint8_t user_flash_erase(void)
 
 	for(uint32_t i = 0; i < USER_APP_MAX_SIZE; i += 4)
 	{
-		if(*(__IO uint32_t *)(target_addr + i) != 0xFFFFFFFFU)
+		if(*(volatile uint32_t *)(target_addr + i) != 0xFFFFFFFFU)
 		{
 			return 0;
 		}
@@ -83,6 +88,12 @@ uint8_t user_erase_start(void)
 	return user_flash_erase();
 }
 
+//解锁flash
+//每次写半个字（2个字节）
+//拼接写入数据，buf+1左移8位放在高位，buf放在低八位
+//写入位置等于目标分区起始地址+偏移地址（每次就处理一个队列成员的数据)+i
+//最后如果数据长度为奇数，单独写入一个字节
+//上锁flash
 uint8_t user_flash_write(uint32_t len, uint8_t *pBuf)
 {
 	uint32_t half_cnt;

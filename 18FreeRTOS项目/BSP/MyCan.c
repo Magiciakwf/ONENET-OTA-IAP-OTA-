@@ -51,8 +51,9 @@ void MyCan_Init(void)
 	NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_InitStructure.NVIC_IRQChannel = USB_LP_CAN1_RX0_IRQn;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
-//	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	/* CAN ISR 使用 xQueueSendFromISR，抢占优先级数值必须 >= 5。 */
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 5;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_Init(&NVIC_InitStructure);
 	
 	CAN_ITConfig(CAN1,CAN_IT_FMP0,ENABLE);
@@ -107,6 +108,7 @@ void MyCAN_Receive(CanRxMsg *Rx_Msg)
 }
 
 ///////////////////CAN接收中断函数///////////////////
+//CAN接收中断方式
 void USB_LP_CAN1_RX0_IRQHandler(void)
 {
 	if(CAN_GetITStatus(CAN1, CAN_IT_FMP0) == SET)

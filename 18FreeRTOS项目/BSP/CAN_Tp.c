@@ -13,12 +13,15 @@ uint32_t Recv_len = 0;
 uint32_t copy_len = 0;
 
 static OTA_Msg_t OTA_Msg;
+volatile uint32_t CAN_QueueDropCount;
 
 static void CANTP_SendMsgFromISR(BaseType_t *pxHigherPriorityTaskWoken)
 {
-	if(OTA_Queue != NULL)
+	if(OTA_Queue == NULL ||
+	   xQueueSendFromISR(OTA_Queue, &OTA_Msg, pxHigherPriorityTaskWoken) != pdPASS)
 	{
-		xQueueSendFromISR(OTA_Queue, &OTA_Msg, pxHigherPriorityTaskWoken);
+		/* 中断不能等待队列空间；记录丢包，由发送端 ACK 超时后重发。 */
+		CAN_QueueDropCount++;
 	}
 }
 
@@ -27,9 +30,21 @@ uint8_t CAN_TP_Recv(void)
 	uint8_t pci;
 	BaseType_t pxHigherPriorityTaskWoken = pdFALSE;
 
-	if(RxMsg.StdId == OTA_START_ID && RxMsg.Data[0] == 0xEE)
+	if(RxMsg.IDE != CAN_Id_Standard || RxMsg.RTR != CAN_RTR_Data ||
+	   RxMsg.DLC == 0 || RxMsg.DLC > 8) return 3;
+
+	//先判断数据是否为START_ID或者END_ID
+	//判断ID＋首位数据
+	if(RxMsg.StdId == OTA_START_ID)
 	{
+		if(RxMsg.DLC < 5 || RxMsg.Data[0] != 0xEE) return 3;
+		status = IDLE;
+		copy_len = 0;
 		memset(&OTA_Msg, 0, sizeof(OTA_Msg));
+		//赋给结构体START类型
+		//Needack
+		//文件大小
+		//调用队列ISR发送函数
 		OTA_Msg.type = START;
 		OTA_Msg.needs_ack = 1;
 		OTA_Msg.data.file_size = ((uint32_t)RxMsg.Data[1] << 24) |
@@ -41,8 +56,15 @@ uint8_t CAN_TP_Recv(void)
 		return 0;
 	}
 
-	if(RxMsg.StdId == OTA_END_ID && RxMsg.Data[0] == 0xFF)
+	if(RxMsg.StdId == OTA_END_ID)
 	{
+		if(RxMsg.DLC < 5 || RxMsg.Data[0] != 0xFF) return 3;
+		status = IDLE;
+		copy_len = 0;
+		//提取MSG类型
+		//needack
+		//赋值CRC buffer
+		//通过队列ISR发送函数发出去
 		memset(&OTA_Msg, 0, sizeof(OTA_Msg));
 		OTA_Msg.type = END;
 		OTA_Msg.needs_ack = 1;
@@ -55,12 +77,15 @@ uint8_t CAN_TP_Recv(void)
 		return 0;
 	}
 
+
+	if(RxMsg.StdId != OTA_SEND_ID) return 3;
 	pci = (RxMsg.Data[0] >> 4) & 0x0F;
 
 	if(pci == 0x00)
 	{
 		uint8_t single_len = RxMsg.Data[0] & 0x0F;
-		if(single_len > 7)
+		/* 有效载荷至少包含 2 字节包序号和 1 字节固件。 */
+		if(single_len < 3 || single_len > 7 || RxMsg.DLC < single_len + 1)
 		{
 			return 3;
 		}
@@ -78,14 +103,22 @@ uint8_t CAN_TP_Recv(void)
 				   OTA_Msg.Recv_len);
 		}
 		Recv_len = single_len;
+		status = IDLE;
+		copy_len = 0;
 		CANTP_SendMsgFromISR(&pxHigherPriorityTaskWoken);
 		portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 		return 0;
 	}
 
+	//定义已拷贝长度copy_len
+	//提取数据包的pci
+	//提取一包的数据长度，第一个字节低四位<<8 | 第二个字节
+	//提取数据后六个字节放入数组里，数组长度为512
 	if(pci == 0x01)
 	{
+		status = IDLE;
 		copy_len = 0;
+		if(RxMsg.DLC != 8) return 3;
 		OTA_Msg.Recv_len = (((uint32_t)RxMsg.Data[0] & 0x0F) << 8) | RxMsg.Data[1];
 		Recv_len = OTA_Msg.Recv_len;
 
@@ -106,6 +139,8 @@ uint8_t CAN_TP_Recv(void)
 		return 0;
 	}
 
+	//提取SN
+	//提取后七位数据放在数组里
 	if(pci == 0x02)
 	{
 		uint8_t current_sn;
@@ -113,6 +148,14 @@ uint8_t CAN_TP_Recv(void)
 		if(status != BUSY)
 		{
 			return 1;
+		}
+		/* 最后一帧允许不填充，但实际数据必须足够。 */
+		if(RxMsg.DLC < 2 ||
+		   (uint32_t)(RxMsg.DLC - 1) < ((Recv_len - copy_len > 7) ? 7 : Recv_len - copy_len))
+		{
+			status = IDLE;
+			copy_len = 0;
+			return 3;
 		}
 
 		current_sn = RxMsg.Data[0] & 0x0F;

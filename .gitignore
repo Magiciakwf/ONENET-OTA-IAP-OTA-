@@ -1,5 +1,6 @@
 # Local agent/editor state
 .agents/
+.vscode/
 
 # Keil/uVision user and generated files
 *.uvguix.*

@@ -21,6 +21,9 @@ static CanTxMsg CANTP_TxMsg = {
 	.DLC = 8,
 };
 
+
+//定义了个八字节大小的数组,因为塞进数组里的数据需要加工
+//把数组的内容拷贝到CAN_TX结构体里，发送出去
 void CANTP_Send(uint8_t *pdata, uint32_t payload_len, uint8_t delay_flag)
 {
 	uint8_t temp_buf[8];
@@ -93,6 +96,7 @@ void flow_ctr(void)
 	payload_len = ((uint32_t)USART1_Recv_Buf[2] << 8) | USART1_Recv_Buf[3];
 	pdata = &USART1_Recv_Buf[4];
 
+	//取出命令类型以及有效载荷长度
 	switch(cmd)
 	{
 		case CMD_START:
@@ -104,6 +108,7 @@ void flow_ctr(void)
 			First_TxMsg.RTR = CAN_RTR_Data;
 			First_TxMsg.IDE = CAN_Id_Standard;
 			First_TxMsg.Data[0] = 0xEE;
+			//把串口接收的buffer赋给CAN结构体
 			for(uint32_t i = 0; i < 4; i++)
 			{
 				First_TxMsg.Data[i + 1] = pdata[i];

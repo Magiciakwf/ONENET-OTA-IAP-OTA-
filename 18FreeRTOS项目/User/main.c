@@ -11,8 +11,8 @@
 int  main()
 {
 	
-	__enable_irq();//Ç°Ãæ½øÈëºóÖĞ¶Ï»á±»½ûÓÃ
-	xTaskCreate(start_task,"start_task",128*1,NULL,0,NULL);
+	__enable_irq();//å‰é¢è¿›å…¥åä¸­æ–­ä¼šè¢«ç¦ç”¨
+	xTaskCreate(start_task,"start_task",128*2,NULL,0,NULL);
 	vTaskStartScheduler();
 	
   while(1)
@@ -23,5 +23,4 @@ int  main()
 		 
    
 }
-
 

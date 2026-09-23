@@ -3,6 +3,8 @@
 
 #include "stm32f10x.h"
 #include "main.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define CANTP_RECVSIZE 512
 
@@ -40,6 +42,7 @@ typedef struct{
 	uint8_t type;
 	uint8_t needs_ack;
 	uint16_t sequence;
+	TaskHandle_t notify_task;
 	uint32_t Recv_len;
 	union{
 		uint32_t file_size;
@@ -52,6 +55,7 @@ typedef struct{
 	uint8_t cmd;
 	uint8_t needs_ack;
 	uint16_t sequence;
+	TaskHandle_t notify_task;
 	uint8_t write_buf[CANTP_RECVSIZE];
 	uint32_t Recv_len;
 	uint32_t file_size;
@@ -62,5 +66,6 @@ uint8_t CAN_TP_Recv(void);
 
 extern uint8_t status;
 extern uint32_t Recv_len;
+extern volatile uint32_t CAN_QueueDropCount; /* 可在 Keil Watch 中查看 */
 
 #endif

@@ -11,15 +11,18 @@ void Protocol_Task(void *pvParameters)
 {
 	while(1)
 	{
-		xQueueReceive(OTA_Queue, &OTA_MsgCmd, portMAX_DELAY);
+		//定义局部静态的OTA_MsgCmd来接收
+		xQueueReceive(OTA_Queue, &OTA_MsgCmd, portMAX_DELAY);//队列来数据后激活
 		memset(&Job_Send, 0, sizeof(Job_Send));
 
 		switch(OTA_MsgCmd.type)
 		{
+			//其实就是拷贝队列的内容，塞进Job队列让专门的任务来处理
 			case START:
 				file_size = OTA_MsgCmd.data.file_size;
 				Job_Send.cmd = ERASE;
 				Job_Send.needs_ack = OTA_MsgCmd.needs_ack;
+				Job_Send.notify_task = OTA_MsgCmd.notify_task;
 				Job_Send.file_size = file_size;
 				xQueueSend(Job_Queue, &Job_Send, portMAX_DELAY);
 				break;
@@ -28,8 +31,9 @@ void Protocol_Task(void *pvParameters)
 				Job_Send.cmd = WRITE;
 				Job_Send.needs_ack = OTA_MsgCmd.needs_ack;
 				Job_Send.sequence = OTA_MsgCmd.sequence;
+				Job_Send.notify_task = OTA_MsgCmd.notify_task;
 				Job_Send.Recv_len = OTA_MsgCmd.Recv_len;
-				memcpy(Job_Send.write_buf,
+				memcpy(Job_Send.write_buf,//拷贝数据后塞给队列
 					   OTA_MsgCmd.data.CANTP_RecvBuf,
 					   OTA_MsgCmd.Recv_len);
 				xQueueSend(Job_Queue, &Job_Send, portMAX_DELAY);
@@ -38,6 +42,7 @@ void Protocol_Task(void *pvParameters)
 			case END:
 				Job_Send.cmd = VERIFY;
 				Job_Send.needs_ack = OTA_MsgCmd.needs_ack;
+				Job_Send.notify_task = OTA_MsgCmd.notify_task;
 				Job_Send.file_size = file_size;
 				Job_Send.expected_crc = ((uint32_t)OTA_MsgCmd.data.crc_buf[0] << 24) |
 										((uint32_t)OTA_MsgCmd.data.crc_buf[1] << 16) |

@@ -12,6 +12,10 @@ uint8_t DMA_USART1Buf[DMA_BUFSIZE];
 uint8_t DMA_RecvFlag = 0;
 uint8_t Serial_RxData;
 
+//开启APB2时钟
+//开启GPIO A时钟
+//配置串口参数 无校验位，八个数据位，一个停止位
+//初始化并使能串口
 void Serial_Init(void)
 {
 	USART_InitTypeDef USART_InitStructure;

@@ -19,11 +19,11 @@ void Serial_Init(void)
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
-//////////////////×¢ÊÍµôDMAºÍÖÐ¶ÏÒÔÊÊÅäYmodem///////////////////////
+//////////////////×¢ï¿½Íµï¿½DMAï¿½ï¿½ï¿½Ð¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ymodem///////////////////////
 	
 //	DMA_InitTypeDef DMA1_InitStructure;
 //	DMA1_InitStructure.DMA_BufferSize = DMA_BUFSIZE;
-//	DMA1_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;//ÍâÉèµ½ÄÚ´æ
+//	DMA1_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;//ï¿½ï¿½ï¿½èµ½ï¿½Ú´ï¿½
 //	DMA1_InitStructure.DMA_M2M = DMA_M2M_Disable;
 //	DMA1_InitStructure.DMA_MemoryBaseAddr = (uint32_t)DMA_USART1Buf;
 //	DMA1_InitStructure.DMA_MemoryDataSize = 8;
@@ -60,15 +60,15 @@ void Serial_Init(void)
 	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
 	USART_Init(USART1, &USART_InitStructure);
 	
-	USART_Cmd(USART1, ENABLE);//ÏÈÊ¹ÄÜ´®¿Ú
-	volatile uint32_t temp = USART1->SR;//Çå³ý±êÖ¾Î»
+	USART_Cmd(USART1, ENABLE);//ï¿½ï¿½Ê¹ï¿½Ü´ï¿½ï¿½ï¿½
+	volatile uint32_t temp = USART1->SR;//ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾Î»
   temp = USART1->DR;
 	
 //	USART_DMACmd(USART1, USART_DMAReq_Rx, ENABLE);
-//////////////ÐèÒªÍ¬Ê±¿ª½ÓÊÕÖÐ¶ÏºÍ¿ÕÏÐÖÐ¶Ï//////////////
-	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);//¿ªÆô½ÓÊÕÖÐ¶Ï
-	USART_ITConfig(USART1, USART_IT_IDLE, ENABLE);//¿ªÆô¿ÕÏÐÖÐ¶Ï
-/////////Ö»ÓÐµ±·¢ÍêÊý¾Ýºó£¬¿ÕÏÐ×´Ì¬²Å»á´¥·¢ÖÐ¶Ï
+//////////////ï¿½ï¿½ÒªÍ¬Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ÏºÍ¿ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½//////////////
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½
+	USART_ITConfig(USART1, USART_IT_IDLE, ENABLE);//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½
+/////////Ö»ï¿½Ðµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ýºó£¬¿ï¿½ï¿½ï¿½×´Ì¬ï¿½Å»á´¥ï¿½ï¿½ï¿½Ð¶ï¿½
 //	DMA_Cmd(DMA1_Channel5,ENABLE);
 	
 
@@ -136,7 +136,7 @@ void Serial_Printf(char *format, ...)
 uint8_t Serial_GetRxData(void)
 {
 	Serial_RxData = USART_ReceiveData(USART1);
-	return Serial_RxData;			//·µ»Ø½ÓÊÕµÄÊý¾Ý±äÁ¿
+	return Serial_RxData;			//ï¿½ï¿½ï¿½Ø½ï¿½ï¿½Õµï¿½ï¿½ï¿½ï¿½Ý±ï¿½ï¿½ï¿½
 }
 
 //uint8_t Serial_RecvPacket(void)
@@ -154,23 +154,26 @@ uint32_t Get_PackSize(void)
 	return Serial_Recvcnt;
 }
 
-///////////////×¢ÊÍµô¿ÕÏÐÖÐ¶Ï·þÎñº¯ÊýÒÔÊÊÅäYmodem////////////////////
+///////////////×¢ï¿½Íµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶Ï·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ymodem////////////////////
+//æœ€å¤§æŽ¥æ”¶512å­—èŠ‚
+//æŽ¥æ”¶å®ŒæˆåŽç½®æ ‡å¿—ä½
 void USART1_IRQHandler(void)
 {
 	volatile uint32_t temp;
-	//Êý¾Ý½ÓÊÕ²¿·Ö
+	//ï¿½ï¿½ï¿½Ý½ï¿½ï¿½Õ²ï¿½ï¿½ï¿½
 	if(USART_GetFlagStatus(USART1,USART_FLAG_RXNE) == SET)
 	{
+		
 		if(Serial_Recvcnt<RECV_SIZE)
 		{
 			USART1_Recv_Buf[Serial_Recvcnt++] = Serial_GetRxData();
 		}
 		else
 		{
-			Serial_GetRxData();//Ö»ÓÐ¶ÁÁËÊý¾Ý²ÅÄÜÇå³ý±êÖ¾Î»£¬²»È»¾Í»áÒ»Ö±Ìø½øÖÐ¶ÏÀï
+			Serial_GetRxData();//Ö»ï¿½Ð¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾Î»ï¿½ï¿½ï¿½ï¿½È»ï¿½Í»ï¿½Ò»Ö±ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½ï¿½ï¿½
 		}
 	}
-	//½ÓÊÕÍê³ÉºóÖÃ¸ß±êÖ¾Î»
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Éºï¿½ï¿½Ã¸ß±ï¿½Ö¾Î»
 	if(USART_GetFlagStatus(USART1,USART_FLAG_IDLE) == SET)
 	{
 		temp = USART1->SR;

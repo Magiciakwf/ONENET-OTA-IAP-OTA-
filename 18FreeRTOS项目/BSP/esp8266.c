@@ -10,6 +10,11 @@ static void ESP8266_SendByte(uint8_t data)
 	while(USART_GetFlagStatus(ESP8266_USART, USART_FLAG_TXE) == RESET);
 }
 
+//1. 开启 USART2 时钟
+//开启GPIO A时钟
+//3. PA2 配置为串口发送
+//P3配置为串口接收
+//配置串口参数
 void ESP8266_Init(uint32_t baudrate)
 {
 	GPIO_InitTypeDef GPIO_InitStructure;
@@ -45,6 +50,7 @@ void ESP8266_SendRaw(const uint8_t *data, uint32_t len)
 	}
 }
 
+//读到数据后会立刻返回，如果无数据则阻塞1ms
 int ESP8266_ReadByte(uint8_t *data, uint32_t timeout_ms)
 {
 	TickType_t start = xTaskGetTickCount();

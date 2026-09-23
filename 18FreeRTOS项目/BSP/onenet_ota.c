@@ -7,6 +7,7 @@
 #include "start_task.h"
 #include "task.h"
 #include "user_flash.h"
+#include "user_ledtask.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -17,6 +18,7 @@
 #define ONENET_HTTP_REQUEST_SIZE 1024U
 #define ONENET_HTTP_RESPONSE_SIZE 1024U
 #define ONENET_HTTP_HEADER_SIZE 768U
+#define ONENET_FLASH_RESULT_TIMEOUT_MS 30000U
 
 typedef struct
 {
@@ -37,22 +39,22 @@ static char s_header[ONENET_HTTP_HEADER_SIZE];
 static uint8_t s_download_buf[ONENET_DOWNLOAD_CHUNK_SIZE];
 static OTA_Msg_t s_ota_msg;
 
-static int onenet_is_placeholder(const char *value)
+static int onenet_wait_flash_result(void)
 {
-	return (value == NULL) || (value[0] == '\0') || (strstr(value, "YOUR_") != NULL);
+	uint32_t result;
+
+	if(xTaskNotifyWait(0,
+					   0xFFFFFFFFUL,
+					   &result,
+					   pdMS_TO_TICKS(ONENET_FLASH_RESULT_TIMEOUT_MS)) != pdTRUE)
+	{
+		return -1;
+	}
+
+	return (result == OTA_STATUS_OK) ? 0 : -1;
 }
 
-static int onenet_config_ready(void)
-{
-	if(onenet_is_placeholder(ONENET_WIFI_SSID) ||
-	   onenet_is_placeholder(ONENET_PRODUCT_ID) ||
-	   onenet_is_placeholder(ONENET_DEVICE_NAME) ||
-	   onenet_is_placeholder(ONENET_AUTH_TOKEN))
-	{
-		return 0;
-	}
-	return 1;
-}
+
 
 static int onenet_json_get_uint(const char *json, const char *key, uint32_t *value)
 {
@@ -446,7 +448,9 @@ static int onenet_queue_start(uint32_t file_size)
 {
 	memset(&s_ota_msg, 0, sizeof(s_ota_msg));
 	s_ota_msg.type = START;
+	s_ota_msg.notify_task = xTaskGetCurrentTaskHandle();//告诉Flash任务通知的对象是这个OTA任务
 	s_ota_msg.data.file_size = file_size;
+	xTaskNotifyStateClear(NULL);//清除任务通知标志位
 	return (xQueueSend(OTA_Queue, &s_ota_msg, portMAX_DELAY) == pdPASS) ? 0 : -1;
 }
 
@@ -459,8 +463,10 @@ static int onenet_queue_data(const uint8_t *data, uint32_t len)
 
 	memset(&s_ota_msg, 0, sizeof(s_ota_msg));
 	s_ota_msg.type = DATA;
+	s_ota_msg.notify_task = xTaskGetCurrentTaskHandle();
 	s_ota_msg.Recv_len = len;
 	memcpy(s_ota_msg.data.CANTP_RecvBuf, data, len);
+	xTaskNotifyStateClear(NULL);
 	return (xQueueSend(OTA_Queue, &s_ota_msg, portMAX_DELAY) == pdPASS) ? 0 : -1;
 }
 
@@ -468,10 +474,12 @@ static int onenet_queue_end(uint32_t expected_crc)
 {
 	memset(&s_ota_msg, 0, sizeof(s_ota_msg));
 	s_ota_msg.type = END;
+	s_ota_msg.notify_task = xTaskGetCurrentTaskHandle();
 	s_ota_msg.data.crc_buf[0] = (uint8_t)(expected_crc >> 24);
 	s_ota_msg.data.crc_buf[1] = (uint8_t)(expected_crc >> 16);
 	s_ota_msg.data.crc_buf[2] = (uint8_t)(expected_crc >> 8);
 	s_ota_msg.data.crc_buf[3] = (uint8_t)expected_crc;
+	xTaskNotifyStateClear(NULL);
 	return (xQueueSend(OTA_Queue, &s_ota_msg, portMAX_DELAY) == pdPASS) ? 0 : -1;
 }
 
@@ -540,6 +548,7 @@ static int onenet_download_range(const OneNET_OTA_Info_t *info,
 
 	while((xTaskGetTickCount() - start) < pdMS_TO_TICKS(15000))
 	{
+		//逐字节接收数据
 		if(onenet_ipd_read_byte(&stream, &ch, 1000) == 0)
 		{
 			continue;
@@ -581,6 +590,7 @@ static int onenet_download_range(const OneNET_OTA_Info_t *info,
 		}
 		else
 		{
+			//把最终数据写入数组
 			if(body_len < expected_len)
 			{
 				s_download_buf[body_len++] = ch;
@@ -598,8 +608,9 @@ static int onenet_download_range(const OneNET_OTA_Info_t *info,
 	{
 		return -1;
 	}
-
+	//计算CRC，拷贝到结构体里再塞进数组里
 	*crc = OTA_CRC32_Update(*crc, s_download_buf, body_len);
+	//把含数组的结构体塞进队列
 	return onenet_queue_data(s_download_buf, body_len);
 }
 
@@ -609,30 +620,45 @@ static int onenet_download_file(const OneNET_OTA_Info_t *info)
 	uint32_t crc = OTA_CRC32_Init();
 	uint8_t next_progress = 10;
 
+	Led_SetOtaState(LED_OTA_DOWNLOAD); /* 新一轮升级清除上一次 OTA 故障灯效 */
+
 	if(info->size == 0 || info->size > USER_APP_MAX_SIZE)
 	{
 		Serial_Printf("OneNET OTA size invalid:%lu\r\n", (unsigned long)info->size);
 		return -1;
 	}
 
-	if(onenet_queue_start(info->size) != 0)
+	//拼接START的结构体，所有任务通知最多等待30s
+	if(onenet_queue_start(info->size) != 0 ||
+	   onenet_wait_flash_result() != 0)
 	{
 		return -1;
 	}
 
+	//开始上报升级进度
 	onenet_report_status(info->tid, 1);
 
+	//offset表示成功下载的字节数
+	//info->size表示总任务字节数
+	//当数据全部塞入队列后才会退出循环
 	while(offset < info->size)
 	{
+		//确定剩下多少字节没下载
 		uint32_t remain = info->size - offset;
+		//决定此次的下载量（最大为512字节）
 		uint32_t part_len = (remain > ONENET_DOWNLOAD_CHUNK_SIZE) ? ONENET_DOWNLOAD_CHUNK_SIZE : remain;
 		uint8_t progress;
-
-		if(onenet_download_range(info, offset, part_len, &crc) != 0)
+		//建立TCP连接
+		//发送带Range的HTTP 请求
+		//读取part_len字节的ESP8266的网络数据到s_download_buf
+		//更新下载过程中的CRC
+		if(onenet_download_range(info, offset, part_len, &crc) != 0 ||
+		   onenet_wait_flash_result() != 0)//每512个字节任务通知就阻塞一次
 		{
 			onenet_report_status(info->tid, 107);
 			return -1;
 		}
+		// 已等待 Flash 完成通知，因此这里表示本块确实写入成功。
 
 		offset += part_len;
 		progress = (uint8_t)((offset * 100U) / info->size);
@@ -647,9 +673,16 @@ static int onenet_download_file(const OneNET_OTA_Info_t *info)
 	}
 
 	onenet_report_status(info->tid, 100);
-	onenet_report_status(info->tid, 101);
 	crc = OTA_CRC32_Finish(crc);
-	return onenet_queue_end(crc);
+	if(onenet_queue_end(crc) != 0 ||
+	   onenet_wait_flash_result() != 0)
+	{
+		onenet_report_status(info->tid, 107);
+		return -1;
+	}
+
+	onenet_report_status(info->tid, 101);
+	return 0;
 }
 
 void OneNET_OTA_Task(void *pvParameters)
@@ -657,22 +690,19 @@ void OneNET_OTA_Task(void *pvParameters)
 	OneNET_OTA_Info_t info;
 
 	(void)pvParameters;
+	/* 这里显示最近一次联网结果，不额外启动网络轮询任务。 */
+	Led_SetNetwork(ONENET_OTA_ENABLE ? 0 : 1);
 	vTaskDelay(pdMS_TO_TICKS(ONENET_OTA_BOOT_DELAY_MS));
 
 #if ONENET_OTA_ENABLE
-	if(onenet_config_ready() == 0)
-	{
-		Serial_Printf("OneNET OTA disabled: fill onenet_ota.h config\r\n");
-		vTaskDelete(NULL);
-		return;
-	}
 
-	ESP8266_Init(ESP8266_DEFAULT_BAUDRATE);
+	// ESP8266_Init(ESP8266_DEFAULT_BAUDRATE);
 
 	while(1)
 	{
 		if(ESP8266_JoinAP(ONENET_WIFI_SSID, ONENET_WIFI_PASSWORD, 15000) != 0)
 		{
+			Led_SetNetwork(0);
 			Serial_Printf("ESP8266 WiFi join failed\r\n");
 			vTaskDelay(pdMS_TO_TICKS(30000));
 			continue;
@@ -680,11 +710,13 @@ void OneNET_OTA_Task(void *pvParameters)
 
 		if(onenet_report_version() != 0)
 		{
+			Led_SetNetwork(0);
 			Serial_Printf("OneNET report version failed\r\n");
 			vTaskDelay(pdMS_TO_TICKS(ONENET_OTA_CHECK_INTERVAL_MS));
 			continue;
 		}
 
+		Led_SetNetwork(1);
 		switch(onenet_check_task(&info))
 		{
 			case 0:
@@ -694,6 +726,7 @@ void OneNET_OTA_Task(void *pvParameters)
 							  info.target);
 				if(onenet_download_file(&info) != 0)
 				{
+					Led_SetOtaState(LED_OTA_ERROR);
 					Serial_Printf("OneNET OTA download failed\r\n");
 				}
 				break;
@@ -703,11 +736,12 @@ void OneNET_OTA_Task(void *pvParameters)
 				break;
 
 			default:
+				Led_SetNetwork(0);
 				Serial_Printf("OneNET OTA check failed\r\n");
 				break;
 		}
 
-		vTaskDelay(pdMS_TO_TICKS(ONENET_OTA_CHECK_INTERVAL_MS));
+		vTaskDelay(pdMS_TO_TICKS(ONENET_OTA_CHECK_INTERVAL_MS));//每10分钟执行一次
 	}
 #else
 	vTaskDelete(NULL);
